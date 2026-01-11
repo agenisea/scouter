@@ -80,6 +80,7 @@ interface SearchContextType {
   updateProgress: (progress: number) => void
   setError: (error: string) => void
   resetSession: () => void
+  resetPipeline: () => void
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined)
@@ -188,6 +189,20 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     setSession(createInitialSession())
   }, [])
 
+  // Reset only pipeline state (status, jobs, results) - keeps form config
+  const resetPipeline = useCallback(() => {
+    setSession((prev) => ({
+      ...prev,
+      userProfile: null,
+      jobs: [],
+      analyses: {},
+      coverLetters: {},
+      status: "idle",
+      progress: 0,
+      error: null,
+    }))
+  }, [])
+
   return (
     <SearchContext.Provider
       value={{
@@ -205,6 +220,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         updateProgress,
         setError,
         resetSession,
+        resetPipeline,
       }}
     >
       {children}

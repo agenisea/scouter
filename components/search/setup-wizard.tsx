@@ -30,6 +30,7 @@ export function SetupWizard() {
     setCoverLetterTemplate,
     setSearchConfig,
     setResumeFile: setContextResumeFile,
+    resetPipeline,
   } = useSearch()
 
   const [currentStep, setCurrentStep] = useState(1)
@@ -39,6 +40,15 @@ export function SetupWizard() {
   const [loading, setLoading] = useState(true)
   const [usingDefaults, setUsingDefaults] = useState({ resume: false, template: false })
   const [usingCached, setUsingCached] = useState({ resume: false, template: false, config: false })
+  const [hasLastSearch, setHasLastSearch] = useState(false)
+
+  // Reset pipeline state when entering wizard (ensures fresh search each time)
+  // Keep cached form values (resume, config, template) but clear results
+  useEffect(() => {
+    if (isHydrated && session.status !== "idle") {
+      resetPipeline()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load cached values from context, then check for default files
   useEffect(() => {
@@ -99,6 +109,11 @@ export function SetupWizard() {
       }
 
       setCurrentStep(skipToStep)
+
+      // Check for cached search results
+      const cachedResults = localStorage.getItem("scouter:resultsData")
+      setHasLastSearch(!!cachedResults)
+
       setLoading(false)
     }
 
@@ -153,8 +168,8 @@ export function SetupWizard() {
 
   return (
     <div className="max-w-3xl mx-auto">
-      {(hasAnyCached || hasAnyDefaults) && (
-        <div className="mb-4 p-3 rounded-lg bg-primary/10 border border-primary/20 text-sm space-y-1">
+      {(hasAnyCached || hasAnyDefaults || hasLastSearch) && (
+        <div className="mb-4 p-3 rounded-lg bg-primary/10 border border-primary/20 text-sm space-y-2">
           {hasAnyCached && (
             <div>
               <span className="font-medium">Restored from cache:</span>{" "}
@@ -171,6 +186,16 @@ export function SetupWizard() {
               {usingDefaults.resume && <span className="text-primary">RESUME.pdf</span>}
               {usingDefaults.resume && usingDefaults.template && ", "}
               {usingDefaults.template && <span className="text-primary">COVER_LETTER_TEMPLATE.md</span>}
+            </div>
+          )}
+          {hasLastSearch && (
+            <div className="pt-1">
+              <button
+                onClick={() => router.push("/search/results")}
+                className="text-primary hover:underline font-medium cursor-pointer"
+              >
+                View Last Search →
+              </button>
             </div>
           )}
         </div>
