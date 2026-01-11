@@ -306,6 +306,8 @@ Return JSON with:
 - concerns: array of potential issues
 - strengths: array of advantages
 
+Write summary and rationale in second person ("you/your"), addressing the job seeker directly.
+
 Return ONLY valid JSON.`,
       }),
     RetryPresets.fast

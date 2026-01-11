@@ -147,6 +147,8 @@ Scoring guidelines:
 - 60-69: Moderate fit, some gaps but transferable skills
 - Below 60: Weak fit, significant gaps
 
+IMPORTANT: Write the summary and all rationale text in second person ("you/your"), addressing the job seeker directly. For example: "You're a strong fit for this role" NOT "The candidate is a strong fit".
+
 Return ONLY valid JSON, no markdown or explanations.`
 }
 
