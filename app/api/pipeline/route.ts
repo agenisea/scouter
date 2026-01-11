@@ -31,6 +31,7 @@ export const dynamic = 'force-dynamic'
 
 interface PipelineRequest {
   searchConfig: SearchConfig
+  template?: string | null
   options?: {
     minFitScore?: number
     generateCoverLetters?: boolean
@@ -67,9 +68,10 @@ export async function POST(request: Request) {
         return
       }
 
-      const { searchConfig, options } = JSON.parse(configJson) as PipelineRequest
+      const { searchConfig, template, options } = JSON.parse(configJson) as PipelineRequest
       const minFitScore = options?.minFitScore ?? 60
       const generateCoverLetters = options?.generateCoverLetters ?? true
+      const coverLetterTemplate = template || null
 
       // =========================================================================
       // Phase 1: Parse Resume
@@ -213,7 +215,7 @@ export async function POST(request: Request) {
 
           if (analysis) {
             try {
-              const coverLetter = await generateCoverLetter(profile, job, analysis)
+              const coverLetter = await generateCoverLetter(profile, job, analysis, coverLetterTemplate)
               coverLetters.push(coverLetter)
               await pipeline.sendCoverLetter(coverLetter)
             } catch (error) {
@@ -326,8 +328,16 @@ Return ONLY valid JSON.`,
 async function generateCoverLetter(
   profile: UserProfile,
   job: JobOpportunity,
-  analysis: FitAnalysis
+  analysis: FitAnalysis,
+  template?: string | null
 ): Promise<CoverLetterDraft> {
+  const templateInstructions = template
+    ? `Use this template as a guide, filling in the placeholders:
+${template}
+
+Replace placeholders like {{COMPANY_NAME}}, {{ROLE_TITLE}}, {{CANDIDATE_NAME}}, etc. with appropriate content.`
+    : `Write a professional cover letter from scratch.`
+
   const { text: letterJson } = await withRetry(
     () =>
       generateText({
@@ -342,6 +352,8 @@ ${job.description.substring(0, 1000)}
 
 Strengths to highlight:
 ${analysis.strengths.join('\n')}
+
+${templateInstructions}
 
 Return JSON with:
 - content: the full cover letter text
