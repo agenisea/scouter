@@ -23,10 +23,14 @@ export function SearchProgress() {
   const { session, resumeFile, isHydrated } = useSearch()
   const hasStarted = useRef(false)
 
+  // Track latest session to avoid stale closure in callbacks
+  const sessionRef = useRef(session)
+  sessionRef.current = session
+
   const pipeline = usePipelineSSE({
     onComplete: () => {
-      // Save results to localStorage before redirect
-      saveResultsToStorage()
+      // Save results to localStorage before redirect (use ref for latest data)
+      saveResultsToStorage(sessionRef.current)
       setTimeout(() => router.push("/search/results"), 1000)
     },
   })
@@ -43,36 +47,37 @@ export function SearchProgress() {
 
   const handleCancel = () => {
     pipeline.cancel()
-    setTimeout(() => router.push("/"), 500)
+    setTimeout(() => router.push("/search"), 500)
   }
 
   // Save results to localStorage for the results page
-  const saveResultsToStorage = () => {
+  // Accepts session parameter to avoid stale closure issues
+  const saveResultsToStorage = (currentSession: typeof session) => {
     const timestamp = new Date().toISOString().split("T")[0]
 
     // Generate markdown
     let markdown = `# Job Search Results - ${timestamp}\n\n`
 
-    if (session.userProfile) {
+    if (currentSession.userProfile) {
       markdown += `## Candidate Profile\n`
-      markdown += `- **Experience**: ${session.userProfile.experienceYears} years\n`
-      markdown += `- **Seniority**: ${session.userProfile.seniorityLevel}\n`
-      markdown += `- **Skills**: ${session.userProfile.skills.slice(0, 10).join(", ")}\n`
-      markdown += `- **Tech Stack**: ${session.userProfile.techStack.slice(0, 8).join(", ")}\n\n`
+      markdown += `- **Experience**: ${currentSession.userProfile.experienceYears} years\n`
+      markdown += `- **Seniority**: ${currentSession.userProfile.seniorityLevel}\n`
+      markdown += `- **Skills**: ${currentSession.userProfile.skills.slice(0, 10).join(", ")}\n`
+      markdown += `- **Tech Stack**: ${currentSession.userProfile.techStack.slice(0, 8).join(", ")}\n\n`
     }
 
     markdown += `---\n\n`
-    markdown += `## Jobs Found (${session.jobs.length})\n\n`
+    markdown += `## Jobs Found (${currentSession.jobs.length})\n\n`
 
-    const sortedJobs = [...session.jobs].sort((a, b) => {
-      const scoreA = session.analyses[a.id]?.overallScore ?? 0
-      const scoreB = session.analyses[b.id]?.overallScore ?? 0
+    const sortedJobs = [...currentSession.jobs].sort((a, b) => {
+      const scoreA = currentSession.analyses[a.id]?.overallScore ?? 0
+      const scoreB = currentSession.analyses[b.id]?.overallScore ?? 0
       return scoreB - scoreA
     })
 
     for (const job of sortedJobs) {
-      const analysis = session.analyses[job.id]
-      const coverLetter = session.coverLetters[job.id]
+      const analysis = currentSession.analyses[job.id]
+      const coverLetter = currentSession.coverLetters[job.id]
 
       markdown += `### ${job.title} at ${job.company}\n\n`
       markdown += `- **Location**: ${job.location}\n`
@@ -100,18 +105,18 @@ export function SearchProgress() {
 
     const structuredResults = {
       timestamp,
-      profile: session.userProfile
+      profile: currentSession.userProfile
         ? {
-            experienceYears: session.userProfile.experienceYears,
-            seniorityLevel: session.userProfile.seniorityLevel,
-            skills: session.userProfile.skills.slice(0, 10),
-            techStack: session.userProfile.techStack.slice(0, 8),
+            experienceYears: currentSession.userProfile.experienceYears,
+            seniorityLevel: currentSession.userProfile.seniorityLevel,
+            skills: currentSession.userProfile.skills.slice(0, 10),
+            techStack: currentSession.userProfile.techStack.slice(0, 8),
           }
         : null,
       jobs: sortedJobs.map((job) => ({
         ...job,
-        analysis: session.analyses[job.id] || null,
-        coverLetter: session.coverLetters[job.id] || null,
+        analysis: currentSession.analyses[job.id] || null,
+        coverLetter: currentSession.coverLetters[job.id] || null,
       })),
     }
     localStorage.setItem("scouter:resultsData", JSON.stringify(structuredResults))

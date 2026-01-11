@@ -13,6 +13,7 @@
 import { generateText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createPipelineStream, calculateProgress } from '@/lib/streaming/sse-handler'
+import { sanitizeLLMResponse } from '@/lib/utils'
 import { extractTextFromPDF, isPDFParseError } from '@/lib/utils/pdf-parser'
 import { searchJobs } from '@/lib/jobs/jsearch'
 import { withRetry, RetryPresets } from '@/lib/resilience/retry'
@@ -40,10 +41,18 @@ interface PipelineRequest {
 
 export async function POST(request: Request) {
   const startTime = Date.now()
+  const { signal } = request
+
+  // Helper to check if client disconnected
+  const checkAborted = () => {
+    if (signal.aborted) {
+      throw new Error('ABORTED')
+    }
+  }
 
   // Create SSE stream
   const pipeline = createPipelineStream({
-    signal: request.signal,
+    signal,
     heartbeatMs: 5000,
   })
 
@@ -76,7 +85,8 @@ export async function POST(request: Request) {
       // =========================================================================
       // Phase 1: Parse Resume
       // =========================================================================
-      await pipeline.sendPhase('parsing', 0, 'Extracting resume content...')
+      checkAborted()
+      await pipeline.sendPhase('parsing', calculateProgress('parsing', 0), 'Extracting resume content...')
 
       let resumeText: string
       const mimeType = resumeFile.type || 'application/octet-stream'
@@ -103,7 +113,8 @@ export async function POST(request: Request) {
         resumeText = await resumeFile.text()
       }
 
-      await pipeline.sendPhase('parsing', 50, 'Analyzing resume with AI...')
+      checkAborted()
+      await pipeline.sendPhase('parsing', calculateProgress('parsing', 50), 'Analyzing resume with AI...')
 
       // Parse resume with AI
       const { text: profileJson } = await withRetry(
@@ -115,7 +126,7 @@ export async function POST(request: Request) {
         RetryPresets.standard
       )
 
-      const profile: UserProfile = JSON.parse(profileJson)
+      const profile: UserProfile = JSON.parse(sanitizeLLMResponse(profileJson))
       const profileWithMetadata: UserProfileWithMetadata = {
         ...profile,
         metadata: {
@@ -127,22 +138,25 @@ export async function POST(request: Request) {
       }
 
       await pipeline.sendProfile(profileWithMetadata)
-      await pipeline.sendPhase('parsing', 100, 'Resume parsed successfully')
+      await pipeline.sendPhase('parsing', calculateProgress('parsing', 100), 'Resume parsed successfully')
 
       // =========================================================================
       // Phase 2: Search Jobs
       // =========================================================================
-      await pipeline.sendPhase('searching', 0, 'Searching for matching jobs...')
+      checkAborted()
+      await pipeline.sendPhase('searching', calculateProgress('searching', 0), 'Searching for matching jobs...')
 
       const searchResult = await searchJobs(searchConfig)
+      checkAborted()
       const jobs = searchResult.jobs
 
       // Stream each job as it's found
       for (let i = 0; i < jobs.length; i++) {
         await pipeline.sendJob(jobs[i])
+        const subProgress = Math.round(((i + 1) / jobs.length) * 100)
         await pipeline.sendPhase(
           'searching',
-          Math.round(((i + 1) / jobs.length) * 100),
+          calculateProgress('searching', subProgress),
           `Found ${i + 1} of ${jobs.length} jobs`
         )
       }
@@ -164,7 +178,8 @@ export async function POST(request: Request) {
       // =========================================================================
       // Phase 3: Analyze Fit (parallel)
       // =========================================================================
-      await pipeline.sendPhase('analyzing', 0, 'Analyzing job fit...')
+      checkAborted()
+      await pipeline.sendPhase('analyzing', calculateProgress('analyzing', 0), 'Analyzing job fit...')
 
       const analyses: FitAnalysis[] = []
       const highFitJobs: JobOpportunity[] = []
@@ -172,6 +187,7 @@ export async function POST(request: Request) {
       // Process jobs in batches of 3 for parallel efficiency
       const batchSize = 3
       for (let i = 0; i < jobs.length; i += batchSize) {
+        checkAborted()
         const batch = jobs.slice(i, i + batchSize)
 
         const batchResults = await Promise.all(
@@ -197,8 +213,8 @@ export async function POST(request: Request) {
           }
         }
 
-        const progress = Math.round(((i + batch.length) / jobs.length) * 100)
-        await pipeline.sendPhase('analyzing', progress, `Analyzed ${i + batch.length} of ${jobs.length} jobs`)
+        const subProgress = Math.round(((i + batch.length) / jobs.length) * 100)
+        await pipeline.sendPhase('analyzing', calculateProgress('analyzing', subProgress), `Analyzed ${i + batch.length} of ${jobs.length} jobs`)
       }
 
       // =========================================================================
@@ -207,9 +223,11 @@ export async function POST(request: Request) {
       const coverLetters: CoverLetterDraft[] = []
 
       if (generateCoverLetters && highFitJobs.length > 0) {
-        await pipeline.sendPhase('generating', 0, 'Generating cover letters...')
+        checkAborted()
+        await pipeline.sendPhase('generating', calculateProgress('generating', 0), 'Generating cover letters...')
 
         for (let i = 0; i < highFitJobs.length; i++) {
+          checkAborted()
           const job = highFitJobs[i]
           const analysis = analyses.find((a) => a.jobId === job.id)
 
@@ -223,8 +241,8 @@ export async function POST(request: Request) {
             }
           }
 
-          const progress = Math.round(((i + 1) / highFitJobs.length) * 100)
-          await pipeline.sendPhase('generating', progress, `Generated ${i + 1} of ${highFitJobs.length} cover letters`)
+          const subProgress = Math.round(((i + 1) / highFitJobs.length) * 100)
+          await pipeline.sendPhase('generating', calculateProgress('generating', subProgress), `Generated ${i + 1} of ${highFitJobs.length} cover letters`)
         }
       }
 
@@ -244,6 +262,13 @@ export async function POST(request: Request) {
       await pipeline.sendComplete(summary)
       await pipeline.close()
     } catch (error) {
+      // Handle client abort gracefully
+      if (error instanceof Error && error.message === 'ABORTED') {
+        console.log('[pipeline] Aborted by client')
+        await pipeline.close()
+        return
+      }
+
       console.error('[pipeline] Fatal error:', error)
 
       const scouterError = wrapError(error, 'error', 'UNKNOWN')
@@ -315,7 +340,7 @@ Return ONLY valid JSON.`,
     RetryPresets.fast
   )
 
-  const analysis = JSON.parse(analysisJson)
+  const analysis = JSON.parse(sanitizeLLMResponse(analysisJson))
 
   return {
     ...analysis,
@@ -365,7 +390,7 @@ Return ONLY valid JSON.`,
     RetryPresets.fast
   )
 
-  const letter = JSON.parse(letterJson)
+  const letter = JSON.parse(sanitizeLLMResponse(letterJson))
 
   return {
     ...letter,

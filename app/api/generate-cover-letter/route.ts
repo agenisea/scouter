@@ -12,6 +12,7 @@ import { generateText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { withRetry, RetryPresets } from '@/lib/resilience/retry'
 import { wrapError, GenerationError } from '@/lib/resilience/errors'
+import { sanitizeLLMResponse } from '@/lib/utils'
 import type {
   UserProfile,
   JobOpportunity,
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
     // Parse response
     let parsedLetter: Omit<CoverLetterDraft, 'jobId'>
     try {
-      parsedLetter = JSON.parse(letterJson)
+      parsedLetter = JSON.parse(sanitizeLLMResponse(letterJson))
     } catch {
       throw new GenerationError(
         'Failed to parse AI cover letter response',

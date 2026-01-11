@@ -12,6 +12,7 @@ import { generateText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { withRetry, RetryPresets } from '@/lib/resilience/retry'
 import { wrapError, AnalysisError } from '@/lib/resilience/errors'
+import { sanitizeLLMResponse } from '@/lib/utils'
 import type { UserProfile, JobOpportunity, FitAnalysis } from '@/lib/types'
 
 interface AnalyzeRequest {
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
     // Parse response
     let parsedAnalysis: Omit<FitAnalysis, 'jobId' | 'confidence' | 'analyzedAt'>
     try {
-      parsedAnalysis = JSON.parse(analysisJson)
+      parsedAnalysis = JSON.parse(sanitizeLLMResponse(analysisJson))
     } catch {
       throw new AnalysisError(
         'Failed to parse AI analysis response',

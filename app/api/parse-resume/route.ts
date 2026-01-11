@@ -13,6 +13,7 @@ import { openai } from '@ai-sdk/openai'
 import { extractTextFromPDF, isPDFParseError } from '@/lib/utils/pdf-parser'
 import { withRetry, RetryPresets } from '@/lib/resilience/retry'
 import { ParseError, wrapError } from '@/lib/resilience/errors'
+import { sanitizeLLMResponse } from '@/lib/utils'
 import type { UserProfile, UserProfileWithMetadata, ExtractionMetadata } from '@/lib/types'
 
 const SUPPORTED_TYPES = [
@@ -110,7 +111,7 @@ export async function POST(request: Request) {
     // Parse and validate response
     let profile: UserProfile
     try {
-      profile = JSON.parse(parsedData)
+      profile = JSON.parse(sanitizeLLMResponse(parsedData))
     } catch {
       throw new ParseError(
         'Failed to parse AI response as JSON',
