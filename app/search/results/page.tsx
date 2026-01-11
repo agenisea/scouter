@@ -31,7 +31,7 @@ interface StructuredResults {
 
 export default function ResultsPage() {
   const router = useRouter()
-  const { session, resetSession } = useSearch()
+  const { session } = useSearch()
   const [markdown, setMarkdown] = useState<string>("")
   const [results, setResults] = useState<StructuredResults | null>(null)
   const [copied, setCopied] = useState(false)
@@ -115,7 +115,7 @@ export default function ResultsPage() {
               <Button variant="outline" size="sm" onClick={handleDownload}>
                 <Download className="h-4 w-4" />
               </Button>
-              <Button size="sm" onClick={() => { resetSession(); router.push("/search"); }}>
+              <Button size="sm" onClick={() => router.push("/search")}>
                 New Search
               </Button>
             </div>

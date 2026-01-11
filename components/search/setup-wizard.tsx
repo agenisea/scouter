@@ -48,7 +48,7 @@ export function SetupWizard() {
     if (isHydrated && session.status !== "idle") {
       resetPipeline()
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isHydrated]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load cached values from context, then check for default files
   useEffect(() => {
